@@ -12,9 +12,15 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 from pathlib import Path
 
+from django.http import HttpRequest
+from django.urls import reverse, reverse_lazy
+
+from settings.conf import ENV_ID, SECRET_KEY as ENV_SECRET_KEY
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = ENV_SECRET_KEY
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
@@ -31,6 +37,10 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    "unfold",  # before django.contrib.admin
+    "unfold.contrib.filters",  # optional, if special filters are needed
+    "unfold.contrib.forms",  # optional, if special form elements are needed
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -56,7 +66,7 @@ ROOT_URLCONF = 'settings.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -68,6 +78,86 @@ TEMPLATES = [
     },
 ]
 
+def published_posts_link(request: HttpRequest) -> str:
+    return reverse("admin:blog_post_changelist") + "?status__exact=published"
+
+
+def draft_posts_link(request: HttpRequest) -> str:
+    return reverse("admin:blog_post_changelist") + "?status__exact=draft"
+
+
+def sidebar_navigation(request: HttpRequest) -> list[dict]:
+    navigation = [
+        {
+            "title": "Overview",
+            "separator": True,
+            "items": [
+                {"title": "Dashboard", "icon": "home", "link": reverse_lazy("admin:index")},
+            ],
+        },
+        {
+            "title": "Content",
+            "separator": True,
+            "items": [
+                {
+                    "title": "Posts",
+                    "icon": "article",
+                    "link": reverse_lazy("admin:blog_post_changelist"),
+                    "badge": "apps.blog.dashboard.draft_posts_badge",
+                },
+                {"title": "Comments", "icon": "forum", "link": reverse_lazy("admin:blog_comment_changelist")},
+                {"title": "Categories", "icon": "folder", "link": reverse_lazy("admin:blog_category_changelist")},
+                {"title": "Tags", "icon": "label", "link": reverse_lazy("admin:blog_tag_changelist")},
+            ],
+        },
+    ]
+    if request.user.is_superuser:
+        navigation.append({
+            "title": "Users & Access",
+            "separator": True,
+            "items": [
+                {"title": "Users", "icon": "people", "link": reverse_lazy("admin:auths_user_changelist")},
+                {"title": "Groups", "icon": "shield", "link": reverse_lazy("admin:auth_group_changelist")},
+            ],
+        })
+    return navigation
+
+
+UNFOLD = {
+    "SITE_TITLE": "Blog Api Admin",
+    "SITE_HEADER": "Blog Api",
+    "SITE_SUBHEADER": "Management",
+    "SITE_SYMBOL": "article",
+    "COLORS": {
+        "primary": {
+            "50": "#eff6ff", "100": "#dbeafe", "200": "#bfdbfe",
+            "300": "#93c5fd", "400": "#60a5fa", "500": "#3b82f6",
+            "600": "#2563eb", "700": "#1d4ed8", "800": "#1e40af",
+            "900": "#1e3a8a", "950": "#172554",
+        },
+    },
+    "ENVIRONMENT": "apps.blog.dashboard.environment_callback",
+    "SITE_DROPDOWN": [
+        {"icon": "code", "title": "GitHub repository", "link": "https://github.com/alanmusabek/blog-api"},
+        {"icon": "menu_book", "title": "Unfold documentation", "link": "https://unfoldadmin.com/docs/"},
+    ],
+    "COMMAND": {"search_models": True},
+    "SIDEBAR": {
+        "show_all_applications": False,
+        "navigation": sidebar_navigation,
+    },
+    "DASHBOARD_CALLBACK": "apps.blog.dashboard.dashboard_callback",
+    "TABS": [
+        {
+            "models": ["blog.post"],
+            "items": [
+                {"title": "All", "link": reverse_lazy("admin:blog_post_changelist")},
+                {"title": "Published", "link": published_posts_link},
+                {"title": "Drafts", "link": draft_posts_link},
+            ],
+        },
+    ],
+}
 WSGI_APPLICATION = 'settings.wsgi.application'
 
 

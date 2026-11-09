@@ -16,7 +16,7 @@ class UserManager(BaseUserManager):
     def create_user(self, 
         email:str, 
         first_name:str, 
-        last_name:str, 
+        second_name:str, 
         password:str|None=None,
         **extra_fields:Any,
         ) -> User:
@@ -25,7 +25,7 @@ class UserManager(BaseUserManager):
         user = self.model(
             email=email,
             first_name=first_name.strip(),
-            last_name=last_name.strip(),
+            second_name=second_name.strip(),
             **extra_fields,
         )
         user.set_password(password)
@@ -35,7 +35,7 @@ class UserManager(BaseUserManager):
     def create_superuser(self,
         email:str,
         first_name:str,
-        last_name:str,
+        second_name:str,
         password:str|None=None,
         **extra_fields:Any,)->User:
         extra_fields.setdefault("is_staff", True)
@@ -43,7 +43,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_active", True)
         return self.create_user(email=email, 
             first_name=first_name,
-            last_name=last_name,
+            second_name=second_name,
             password=password,
             **extra_fields,
         )
@@ -57,5 +57,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["first_name", "second_name"]
     objects = UserManager()
   

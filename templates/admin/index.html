@@ -1,0 +1,35 @@
+{% extends "admin/base.html" %}
+{% load unfold %}
+
+{% block title %}{{ title }} | {{ site_title }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+    <div class="flex flex-col gap-6">
+        <div class="flex flex-col gap-6 lg:flex-row">
+            {% for card in cards %}
+                {% component "unfold/components/card.html" with title=card.title %}
+                    <p class="font-semibold text-2xl text-important">{{ card.value }}</p>
+                {% endcomponent %}
+            {% endfor %}
+        </div>
+
+        {% component "unfold/components/card.html" with title="Posts per category" %}
+            {% component "unfold/components/chart/bar.html" with data=category_chart height=320 %}{% endcomponent %}
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with title="Top 5 authors" %}
+            {% component "unfold/components/table.html" with table=top_authors card_included=1 %}{% endcomponent %}
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with title="Published vs drafts" %}
+            <div class="flex flex-col gap-6">
+                {% component "unfold/components/progress.html" with title="Published" value=published_percent description=published_percent %}{% endcomponent %}
+                {% component "unfold/components/progress.html" with title="Drafts" value=draft_percent description=draft_percent %}{% endcomponent %}
+            </div>
+        {% endcomponent %}
+    </div>
+{% endblock %}
