@@ -240,7 +240,7 @@ class Command(BaseCommand):
             User.objects.filter(is_superuser=False).delete()
         users_created = self.__create_users(users_count)
         users = list(User.objects.all())
-
+        
         if (posts_count > 0 or comments_count > 0) and not users:
             raise CommandError("No users available")
         categories_created = self.__create_categories()
