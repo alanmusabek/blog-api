@@ -8,13 +8,21 @@ class Category(models.Model):
     name = models.CharField(max_length=NAME_MAX_LENGTH)
     slug = models.SlugField(unique=True)
 
+    def __str__(self) -> str:
+        return self.name
+
 class Tag(models.Model):
     NAME_MAX_LENGTH = 50
     name = models.CharField(max_length=NAME_MAX_LENGTH)
     slug = models.SlugField(unique=True)
 
+    def __str__(self) -> str:
+        return self.name
+
 class Post(models.Model):
     TITLE_MAX_LENGTH = 200
+    SLUG_MAX_LENGTH = 255
+
     class Status (models.TextChoices):
         DRAFT = "draft", "Draft"
         PUBLISHED = "published", "Published"
@@ -24,6 +32,8 @@ class Post(models.Model):
         related_name="posts",
     )
     title = models.CharField(max_length=TITLE_MAX_LENGTH)
+    slug = models.SlugField(max_length=SLUG_MAX_LENGTH, unique=True)
+    body = models.TextField(blank=True, default="")
     category = models.ForeignKey(
         Category,
         on_delete=models.SET_NULL,
@@ -42,6 +52,9 @@ class Post(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self) -> str:
+        return self.title
+
 class Comment(models.Model):
     post = models.ForeignKey(
         Post,
@@ -55,3 +68,6 @@ class Comment(models.Model):
     )
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"Comment #{self.pk} by {self.author_id} on post {self.post_id}"

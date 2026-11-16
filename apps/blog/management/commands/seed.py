@@ -2,14 +2,14 @@
 # Other imports
 from typing import Any
 from faker import Faker
-from datetime import datetime
+from datetime import datetime, timedelta
 from random import choice, random, randint, sample
 
 # Django imports
 from django.core.management.base import BaseCommand, CommandParser, CommandError
 from django.contrib.auth.hashers import make_password
 from django.utils.text import slugify
-
+from django.utils import timezone
 
 # Model imports
 from apps.auths.models import User
@@ -21,6 +21,20 @@ DEFAULT_USERS = 20
 DEFAULT_POSTS = 100
 DEFAULT_COMMENTS = 500
 SEED_PASSWORD = "password123"
+
+# PROBABILITIES
+STAFF_SHARE = 0.2
+INACTIVE_SHARE = 0.1
+NO_CATEGORY_SHARE = 0.1
+PUBLISHED_SHARE = 0.7
+MAX_TAGS_PER_POST = 5
+
+# POST CONTENT
+TITLE_WORDS = 6
+BODY_PARAGRAPHS = 3
+COMMENT_SENTENCES = 3
+SLUG_BASE_MAX_LENGTH = 240
+PARAGRAPH_SEPARATOR = "\n\n"
 
 # CATEGORIES and TAGS
 CATEGORIES = [
@@ -62,20 +76,29 @@ MAILBOX_DOMAINS = [
     "@outlook.com",
     "@yahoo.com",
 ]
-# Helpers
-# users = []
-# categories = []
-# tags = []
-# posts = []
-# comments = []
 
+# Dates
+DAYS_BACK = 365
+SECONDS_IN_DAY = 24 * 60 * 60
+EDITED_SHARE = 0.3
+MIN_EDIT_DAYS = 1
+MAX_EDIT_DAYS = 30
 
-# User.objects.bulk_create(users)
-# Category.objects.bulk_create(categories)
-# Tag.objects.bulk_create(tags)
-# Post.objects.bulk_create(posts)
-# Comment.objects.bulk_create(comments)
+# Custom functions
+def random_past_datetime(now: datetime) -> datetime:
+    """Random time in the last 365 days"""
+    return now - timedelta(seconds=randint(0, DAYS_BACK * SECONDS_IN_DAY))
 
+def random_updated_at(created_at: datetime, now: datetime) -> datetime:
+    """30% of posts edited after ~30 days"""
+    if random() >= EDITED_SHARE:
+        return created_at
+    edited_at = created_at + timedelta(days=randint(MIN_EDIT_DAYS, MAX_EDIT_DAYS))
+    return min(edited_at, now)
+
+def random_datetime_between(start: datetime, end: datetime) -> datetime:
+    """Random time between start and end"""
+    return start + (end - start) * random()
 # Command class
 class Command(BaseCommand):
     help = "Fill the database with fake data."
@@ -117,14 +140,14 @@ class Command(BaseCommand):
                     first_name = fake_first_name,
                     second_name = fake_last_name,
                     password=f"{hashed_password}",
-                    is_staff=random() < 0.2,
-                    is_active=random() >= 0.1
+                    is_staff=random() < STAFF_SHARE,
+                    is_active=random() >= INACTIVE_SHARE
                 )
             )
         User.objects.bulk_create(users)
         return len(users)
 
-    def __create_categories(self) -> Int:
+    def __create_categories(self) -> int:
         categories = []
         existing_names = set(Category.objects.values_list("name", flat=True))
         existing_slugs = set(Category.objects.values_list("slug", flat=True))
@@ -172,35 +195,61 @@ class Command(BaseCommand):
         Tag.objects.bulk_create(tags, ignore_conflicts= True)
         return len(tags)
 
-    def __create_posts(self, number_of_posts: int, users: list) -> int:
+    def __unique_post_slug(self, title: str, existing_slugs: set[str]) -> str:
+        """Slug from the title, with a number at the end if it is already taken"""
+        base_slug = slugify(title)[:SLUG_BASE_MAX_LENGTH]
+        slug = base_slug
+        counter = 1
+        while slug in existing_slugs:
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+        existing_slugs.add(slug)
+        return slug
+
+    def __create_posts(self, number_of_posts: int, users: list[User]) -> list[Post]:
         posts = []
         post_tags = []
-        
         categories = list(Category.objects.all())
         tags = list(Tag.objects.all())
+        existing_slugs = set(Post.objects.values_list("slug", flat=True))
 
         for _ in range(number_of_posts):
-            selected_tags = sample(tags, k = randint(0, min(5, len(tags))))
-            category = (choice(categories) if categories and random() >= 0.1 else None)
+            title = fake.sentence(nb_words=TITLE_WORDS).rstrip(".")
+            category = (choice(categories) if categories and random() >= NO_CATEGORY_SHARE else None)
             posts.append(Post(
-                title=fake.sentence(nb_words=6).rstrip("."),
+                title=title,
+                slug=self.__unique_post_slug(title, existing_slugs),
+                body=PARAGRAPH_SEPARATOR.join(fake.paragraphs(nb=BODY_PARAGRAPHS)),
                 authors=choice(users),
                 category=category,
-                status=(Post.Status.PUBLISHED if random()<0.7 else Post.Status.DRAFT)
+                status=(Post.Status.PUBLISHED if random()< PUBLISHED_SHARE else Post.Status.DRAFT)
                 )
             )
+            selected_tags = sample(tags, k=randint(0, min(MAX_TAGS_PER_POST, len(tags))))
             post_tags.append(selected_tags)
         created_posts = Post.objects.bulk_create(posts)
-        for post, selected_tags in zip(created_posts, post_tags):
-            post.tags.set(selected_tags)
-        return len (created_posts)
 
-    def __create_comments(self, number_of_comments: int, users: list) -> int:
+        # Date
+        now = timezone.now()
+        for post in created_posts:
+
+            post.created_at = random_past_datetime(now)
+            post.updated_at = random_updated_at(post.created_at, now)
+        Post.objects.bulk_update(created_posts, ["created_at", "updated_at"])
+
+
+        PostTag = Post.tags.through
+        PostTag.objects.bulk_create([
+            PostTag(post_id=post.pk, tag_id=tag.pk)
+            for post, selected_tags in zip(created_posts, post_tags)
+            for tag in selected_tags
+        ])
+        return created_posts
+
+    def __create_comments(self, number_of_comments: int, users: list[User], posts: list[Post]) -> int:
         comments = []
 
-        published_posts = list(
-            Post.objects.filter(status=Post.Status.PUBLISHED)
-        )
+        published_posts = [post for post in posts if post.status == Post.Status.PUBLISHED]
 
         if number_of_comments > 0 and not published_posts:
             raise CommandError(
@@ -212,13 +261,16 @@ class Command(BaseCommand):
                 Comment(
                     post=choice(published_posts),
                     author=choice(users),
-                    body=fake.paragraph(nb_sentences=3)
+                    body=fake.paragraph(nb_sentences=COMMENT_SENTENCES)
                 )
             )
 
-        Comment.objects.bulk_create(comments)
-
-        return len(comments)
+        created_comments = Comment.objects.bulk_create(comments)
+        now = timezone.now()
+        for comment in created_comments:
+            comment.created_at = random_datetime_between(comment.post.created_at, now)
+        Comment.objects.bulk_update(created_comments, ["created_at"])
+        return len(created_comments)
         
     def handle(self, *args: Any, **options: Any) -> None:
         start_time: datetime = datetime.now()
@@ -233,11 +285,14 @@ class Command(BaseCommand):
             raise CommandError("Counts cannot be negative.")
         
         if clear:
+            self.stdout.write(f"Clearing has started...")
             Comment.objects.all().delete()
             Post.objects.all().delete()
             Tag.objects.all().delete()
             Category.objects.all().delete()
             User.objects.filter(is_superuser=False).delete()
+            self.stdout.write(f"Cleared successfully!")
+
         users_created = self.__create_users(users_count)
         users = list(User.objects.all())
         
@@ -245,8 +300,9 @@ class Command(BaseCommand):
             raise CommandError("No users available")
         categories_created = self.__create_categories()
         tags_created = self.__create_tags()
-        posts_created = self.__create_posts(posts_count, users)
-        comments_created = self.__create_comments(comments_count, users)
+        posts = self.__create_posts(posts_count, users)
+        posts_created = len(posts)
+        comments_created = self.__create_comments(comments_count, users, posts)
 
         elapsed_time = (datetime.now() - start_time).total_seconds()
         self.stdout.write(self.style.SUCCESS("Seeding completed!"))
